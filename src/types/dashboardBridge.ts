@@ -1,9 +1,11 @@
 import type {
+  ActiveSimulator,
   DashboardLayout,
   DashboardProfile,
   DriverTagSettings,
 } from './dashboardLayout';
 import type { SessionProfileMap } from './sessionProfiles';
+import type { SimWidgetSupportConfig } from './simWidgetSupport';
 
 export interface SaveDashboardOptions {
   forceReload?: boolean;
@@ -52,11 +54,26 @@ export interface DashboardBridge {
   onDemoModeChanged: (
     callback: (value: boolean) => void
   ) => (() => void) | undefined;
+  /** Rebuilds the telemetry bridge after generalSettings.simulator changes. */
+  notifySimulatorPreferenceChanged?: () => void;
+  /** The running simulator, or null while auto-detection is still probing. */
+  getActiveSimulator?: () => Promise<ActiveSimulator | null>;
+  onSimulatorChanged?: (
+    callback: (value: ActiveSimulator | null) => void
+  ) => (() => void) | undefined;
   getCurrentDashboard: () => DashboardLayout | null;
   saveGarageCoverImage: (buffer: Uint8Array) => Promise<string>;
   getGarageCoverImageAsDataUrl: (imagePath: string) => Promise<string | null>;
   savePlayerIconImage: (buffer: Uint8Array) => Promise<string>;
   getPlayerIconImageAsDataUrl: (imagePath: string) => Promise<string | null>;
+  /** The per-simulator disabled-widget list, read from simWidgetSupport.json. */
+  getSimWidgetSupport?: () => Promise<SimWidgetSupportConfig>;
+  /**
+   * Whether the settings menu lists every widget or only the ones the running
+   * sim supports. Persisted in config.json so it survives a restart.
+   */
+  getSettingsShowAllWidgets?: () => Promise<boolean>;
+  setSettingsShowAllWidgets?: (showAll: boolean) => Promise<void>;
   getAnalyticsOptOut: () => Promise<boolean>;
   setAnalyticsOptOut: (optOut: boolean) => Promise<void>;
   getCycleProfiles?: () => Promise<boolean>;
