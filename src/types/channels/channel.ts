@@ -146,6 +146,9 @@ export interface DriverControlsSnapshot {
   engineWarnings?: number;
   shiftRpm?: number;
   blinkRpm?: number;
+  steeringWheelAngleMax?: number;
+  lateralAccel?: number;
+  longitudinalAccel?: number;
   tyreTemperature?: readonly number[];
   tyrePressure?: readonly number[];
   tyreWear?: readonly number[];

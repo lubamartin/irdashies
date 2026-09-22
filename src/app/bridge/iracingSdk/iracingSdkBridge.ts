@@ -60,6 +60,8 @@ const TELEMETRY_ALLOWLIST = new Set<keyof Telemetry>([
   'RFshockDefl',
   'LRshockDefl',
   'RRshockDefl',
+  'LatAccel',
+  'LongAccel',
   'CamCarIdx',
   'CarIdxBestLapTime',
   'CarIdxClass',

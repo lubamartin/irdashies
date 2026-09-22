@@ -89,6 +89,15 @@ export class DriverControlsProcessor implements TelemetryProcessor<DriverControl
       changed;
     changed =
       this.set(
+        'steeringWheelAngleMax',
+        numberValue(frame, 'SteeringWheelAngleMax')
+      ) || changed;
+    changed =
+      this.set('lateralAccel', numberValue(frame, 'LatAccel')) || changed;
+    changed =
+      this.set('longitudinalAccel', numberValue(frame, 'LongAccel')) || changed;
+    changed =
+      this.set(
         'tyreTemperature',
         cornerValues(frame, [
           ['LFtempCL', 'LFtempCM', 'LFtempCR'],
@@ -160,6 +169,9 @@ export class DriverControlsProcessor implements TelemetryProcessor<DriverControl
     this.latest.engineWarnings = undefined;
     this.latest.shiftRpm = undefined;
     this.latest.blinkRpm = undefined;
+    this.latest.steeringWheelAngleMax = undefined;
+    this.latest.lateralAccel = undefined;
+    this.latest.longitudinalAccel = undefined;
     this.latest.tyreTemperature = undefined;
     this.latest.tyrePressure = undefined;
     this.latest.tyreWear = undefined;
