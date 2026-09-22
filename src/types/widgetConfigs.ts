@@ -479,6 +479,16 @@ export interface BlindSpotMonitorConfig {
   thresholdColor2?: number;
 }
 
+export interface RadarConfig {
+  range: number;
+  markerWidth: number;
+  markerLength: number;
+  showOrientation: boolean;
+  background: { opacity: number };
+  showOnlyWhenOnTrack: boolean;
+  sessionVisibility: SessionVisibilitySettings;
+}
+
 export interface RejoinIndicatorConfig {
   showAtSpeed: number;
   careGap: number;
@@ -918,6 +928,27 @@ export interface CompactTelemetryWidgetConfig {
   sessionVisibility: SessionVisibilitySettings;
 }
 
+export interface TrackNote {
+  id: string;
+  trackId: string;
+  lapDistPct: number;
+  text: string;
+  scope: 'always' | 'pit' | 'session';
+}
+
+export interface TrackNotesConfig extends CompactTelemetryWidgetConfig {
+  triggerDistancePct: number;
+  notes: TrackNote[];
+}
+
+export interface AccelerationTimerConfig extends CompactTelemetryWidgetConfig {
+  ranges: { fromKph: number; toKph: number }[];
+}
+
+export interface StintHistoryConfig extends CompactTelemetryWidgetConfig {
+  maxStints: number;
+}
+
 export interface TyrePanelConfig extends CompactTelemetryWidgetConfig {
   pressureUnit: 'kPa' | 'psi';
   temperatureUnit: 'C' | 'F';
@@ -931,6 +962,10 @@ export interface TyrePanelConfig extends CompactTelemetryWidgetConfig {
   };
 }
 
+export interface CruiseOdometerConfig extends CompactTelemetryWidgetConfig {
+  distanceUnit: 'km' | 'mi';
+}
+
 export interface WidgetConfigMap {
   standings: StandingsConfig;
   relative: RelativeConfig;
@@ -942,6 +977,7 @@ export interface WidgetConfigMap {
   tachometer: TachometerConfig;
   fuel: FuelConfig;
   blindspotmonitor: BlindSpotMonitorConfig;
+  radar: RadarConfig;
   garagecover: GarageCoverConfig;
   rejoin: RejoinIndicatorConfig;
   flag: FlagConfig;
@@ -959,7 +995,16 @@ export interface WidgetConfigMap {
   battle: BattleConfig;
   laptrace: LapTraceConfig;
   gantry: GantryConfig;
+  tracknotes: TrackNotesConfig;
+  accelerationtimer: AccelerationTimerConfig;
+  stinthistory: StintHistoryConfig;
+  frictioncircle: CompactTelemetryWidgetConfig;
   tyrepanel: TyrePanelConfig;
+  brakepressure: CompactTelemetryWidgetConfig;
+  suspensionposition: CompactTelemetryWidgetConfig;
+  trackclock: CompactTelemetryWidgetConfig;
+  steeringmeter: CompactTelemetryWidgetConfig;
+  cruiseodometer: CruiseOdometerConfig;
 }
 
 export type TypedDashboardWidget<
@@ -1045,6 +1090,7 @@ export type TachometerWidgetSettings = BaseWidgetSettings<TachometerConfig>;
 export type FuelWidgetSettings = BaseWidgetSettings<FuelConfig>;
 export type BlindSpotMonitorWidgetSettings =
   BaseWidgetSettings<BlindSpotMonitorConfig>;
+export type RadarWidgetSettings = BaseWidgetSettings<RadarConfig>;
 export type RejoinIndicatorWidgetSettings =
   BaseWidgetSettings<RejoinIndicatorConfig>;
 export type FlagWidgetSettings = BaseWidgetSettings<FlagConfig> & {

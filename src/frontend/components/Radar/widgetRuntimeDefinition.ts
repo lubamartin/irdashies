@@ -1,8 +1,9 @@
 import type { WidgetRuntimeDefinition } from '../../widgetRuntime';
 
 export default {
-  id: 'tyrepanel',
+  id: 'radar',
   sessionData: true,
-  channels: ['driver-controls.snapshot'],
+  channels: ['blind-spot.snapshot'],
   ratePreset: 'driverFocused',
+  channelRates: { 'blind-spot.snapshot': 25 },
 } satisfies WidgetRuntimeDefinition;

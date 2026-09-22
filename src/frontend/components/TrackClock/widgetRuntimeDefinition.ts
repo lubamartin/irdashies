@@ -1,8 +1,7 @@
 import type { WidgetRuntimeDefinition } from '../../widgetRuntime';
 
 export default {
-  id: 'tyrepanel',
-  sessionData: true,
-  channels: ['driver-controls.snapshot'],
-  ratePreset: 'driverFocused',
+  id: 'trackclock',
+  channels: ['session-bar.snapshot'],
+  ratePreset: 'informational',
 } satisfies WidgetRuntimeDefinition;
