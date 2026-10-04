@@ -123,8 +123,11 @@ function fixture(): LmuRawTelemetry {
 describe('mapLmuTelemetry', () => {
   it('maps session scalars', () => {
     const t = mapLmuTelemetry(fixture());
-    expect(t.SessionTick.value[0]).toBe(1250.5);
-    expect(t.SessionTime.value[0]).toBe(1250.5);
+    // Both clocks follow the player's 100 Hz mElapsedTime (250.4), not the 5 Hz
+    // scoring mCurrentET (1250.5). LapTrace timestamps every sample with
+    // SessionTime, so the coarse clock quantised the whole trace.
+    expect(t.SessionTick.value[0]).toBe(250.4);
+    expect(t.SessionTime.value[0]).toBe(250.4);
     expect(t.SessionTimeTotal.value[0]).toBe(3600);
     expect(t.SessionTimeRemain.value[0]).toBe(2349.5);
     expect(t.SessionLapsTotal.value[0]).toBe(12);
@@ -207,18 +210,110 @@ describe('mapLmuTelemetry', () => {
     expect(t.Speed.value[0]).toBe(0);
     expect(t.OnPitRoad.value[0]).toBe(false);
     expect(t.IsOnTrack.value[0]).toBe(false);
+    // NOT_IN_WORLD, the sentinel CarIdxTrackSurface already uses for an empty
+    // slot. ON_TRACK told TrackStateProcessor the player was out driving.
+    expect(t.PlayerTrackSurface.value[0]).toBe(-1);
   });
 
   it('maps per-car arrays by slot', () => {
     const t = mapLmuTelemetry(fixture());
     expect(t.CarIdxPosition.value).toEqual([2, 1, 3]);
     expect(t.CarIdxLapDistPct.value).toEqual([0.4, 0.6, 0.2]);
-    expect(t.CarIdxLap.value).toEqual([2, 3, 1]);
+    // iRacing's CarIdxLap is the lap in progress; mTotalLaps is laps completed.
+    expect(t.CarIdxLap.value).toEqual([3, 4, 2]);
+    expect(t.CarIdxLapCompleted.value).toEqual([2, 3, 1]);
     expect(t.CarIdxClass.value).toEqual([0, 0, 1]);
     expect(t.CarIdxBestLapTime.value).toEqual([134.5, 132.8, 137.1]);
     expect(t.CarIdxEstTime.value).toEqual([50, 60, 20]);
     expect(t.CarIdxOnPitRoad.value).toEqual([false, false, true]);
     expect(t.CarIdxTrackSurface.value).toEqual([3, 3, 1]);
+  });
+
+  it('falls back to the scoring clock when there is no player car', () => {
+    // mElapsedTime is only published for a player vehicle; spectating or sitting
+    // in the garage must not leave the session clock at 0.
+    const raw: Record<string, unknown> = { ...fixture() };
+    delete raw.elapsedTime;
+    const t = mapLmuTelemetry(raw as unknown as LmuRawTelemetry);
+    expect(t.SessionTime.value[0]).toBe(1250.5);
+  });
+
+  it('reports the clutch in iRacing engagement terms, not pedal travel', () => {
+    // iRacing's Clutch is 1.0 with the pedal UP, and the Input widget inverts
+    // what it receives. LMU's mFilteredClutch is the pedal, so passing it
+    // through showed a full clutch bar at rest.
+    const released = mapLmuTelemetry({ ...fixture(), filteredClutch: 0 });
+    expect(released.Clutch.value[0]).toBe(1);
+
+    const pressed = mapLmuTelemetry({ ...fixture(), filteredClutch: 1 });
+    expect(pressed.Clutch.value[0]).toBe(0);
+
+    // ClutchRaw needs the identical flip: the Input widget reads it instead of
+    // Clutch when "raw values" is enabled, and inverts it just the same.
+    const rawReleased = mapLmuTelemetry({ ...fixture(), unfilteredClutch: 0 });
+    expect(rawReleased.ClutchRaw.value[0]).toBe(1);
+
+    const rawPressed = mapLmuTelemetry({ ...fixture(), unfilteredClutch: 1 });
+    expect(rawPressed.ClutchRaw.value[0]).toBe(0);
+
+    // Throttle and brake share the 0 = off convention and must not be flipped.
+    const t = mapLmuTelemetry(fixture());
+    expect(t.Throttle.value[0]).toBeCloseTo(0.79);
+    expect(t.Brake.value[0]).toBe(0);
+    expect(t.ThrottleRaw.value[0]).toBeCloseTo(0.8);
+    expect(t.BrakeRaw.value[0]).toBe(0);
+  });
+
+  it('reports nobody on the radio, since LMU has no radio chat', () => {
+    // RadioProcessor reads any index >= 0 as someone transmitting, so the old
+    // hardcoded 0 pinned a speaker icon on whoever held car index 0. iRacing's
+    // idle value is -1.
+    const t = mapLmuTelemetry(fixture());
+    expect(t.RadioTransmitCarIdx.value[0]).toBe(-1);
+  });
+
+  it('ranks class positions, 1-based, from the same order as the session', () => {
+    // Slots 0 and 1 share class 0 and run P2/P1; slot 2 is alone in class 1.
+    const t = mapLmuTelemetry(fixture());
+    expect(t.CarIdxClassPosition.value).toEqual([2, 1, 1]);
+  });
+
+  it('reports time into the lap, not the whole-lap estimate', () => {
+    // CarIdxEstTime is "how far into the lap this car is" — feeding it the
+    // ~130s lap estimate made every relative delta meaningless.
+    const raw = fixture();
+    const t = mapLmuTelemetry(raw);
+    expect(t.CarIdxEstTime.value).toEqual(Array.from(raw.vehTimeIntoLap));
+  });
+
+  it('falls back when LMU cannot estimate time into the lap', () => {
+    const raw = fixture();
+    raw.vehTimeIntoLap = new Float64Array([-1, 60, 20]);
+    const t = mapLmuTelemetry(raw);
+    // -1 is finite and would sail through as a real value, so slot 0 is
+    // reconstructed from its progress around the lap instead.
+    expect(t.CarIdxEstTime.value[0]).toBeCloseTo(
+      0.4 * raw.vehEstimatedLapTime[0],
+      6
+    );
+    expect(t.CarIdxEstTime.value[1]).toBe(60);
+  });
+
+  it('marks empty slots with the sentinels iRacing uses', () => {
+    // The addon sizes arrays at max(mID)+1, so a sparse grid leaves holes.
+    // Zero-filled they read as a real car in class 0 sitting at position 0.
+    const raw = fixture();
+    raw.vehLapDistPct = new Float64Array([0.4, -1, 0.2]);
+    const t = mapLmuTelemetry(raw);
+    expect(t.CarIdxTrackSurface.value[1]).toBe(-1);
+    expect(t.CarIdxClass.value[1]).toBe(-1);
+    expect(t.CarIdxPosition.value[1]).toBe(0);
+    expect(t.CarIdxClassPosition.value[1]).toBe(0);
+    expect(t.CarIdxLap.value[1]).toBe(-1);
+    expect(t.CarIdxLapCompleted.value[1]).toBe(-1);
+    // The remaining cars still rank against each other.
+    expect(t.CarIdxPosition.value[0]).toBeGreaterThan(0);
+    expect(t.CarIdxPosition.value[2]).toBeGreaterThan(0);
   });
 
   it('clamps LMU lap distance progress for map positioning', () => {
@@ -285,6 +380,68 @@ describe('mapLmuTelemetry', () => {
   it('computes wind magnitude', () => {
     const t = mapLmuTelemetry(fixture());
     expect(t.WindVel.value[0]).toBeCloseTo(Math.hypot(2, 0, -3));
+  });
+
+  it('gives the wind a bearing, in the same frame as the car heading', () => {
+    // Every widget renders WindDir - YawNorth and nothing else, so the two must
+    // agree; a hardcoded 0 for both drew a fixed arrow that read as a bearing.
+    // mWind points where the wind blows TO, iRacing's WindDir where it blows
+    // FROM, hence the half turn.
+    const t = mapLmuTelemetry(fixture());
+    expect(t.WindDir.value[0]).toBeCloseTo(Math.atan2(2, -3) + Math.PI);
+    // Fixture car faces +Z: atan2(0, 1) = 0.
+    expect(t.YawNorth.value[0]).toBe(0);
+
+    // Turn the car to face +X and the relative bearing swings with it.
+    const turned = mapLmuTelemetry({
+      ...fixture(),
+      vehOriX: new Float64Array([1, 1, 1]),
+      vehOriZ: new Float64Array([0, 0, 0]),
+    } as unknown as LmuRawTelemetry);
+    expect(turned.YawNorth.value[0]).toBeCloseTo(Math.PI / 2);
+    expect(turned.WindDir.value[0]).toBeCloseTo(Math.atan2(2, -3) + Math.PI);
+  });
+
+  it('leaves humidity and fog absent rather than reporting zero', () => {
+    // LMU publishes neither. WeatherHumidity renders "- %" for undefined, so an
+    // empty value array is honest where num(0) invented a 0% reading.
+    const t = mapLmuTelemetry(fixture());
+    expect(t.RelativeHumidity.value).toEqual([]);
+    expect(t.FogLevel.value).toEqual([]);
+  });
+
+  it('flags a timed race with iRacing 32767, not a derived lap count', () => {
+    // The fuel calculator picks its timed-race branch on the literal 32767.
+    // LMU marks "no lap limit" with a sentinel instead, and which one varies:
+    // 0 when absent, a huge int when "unlimited". Both used to pass straight
+    // through -- 0 told the calculator the race ended inside the current lap.
+    const absent = mapLmuTelemetry({ ...fixture(), maxLaps: 0 });
+    expect(absent.SessionLapsRemain.value[0]).toBe(32767);
+    expect(absent.SessionLapsTotal.value[0]).toBe(32767);
+
+    const unlimited = mapLmuTelemetry({ ...fixture(), maxLaps: 2147483647 });
+    expect(unlimited.SessionLapsRemain.value[0]).toBe(32767);
+
+    // A real lap limit still counts down. Fixture player has 3 of 12 laps.
+    const limited = mapLmuTelemetry(fixture());
+    expect(limited.SessionLapsRemain.value[0]).toBe(9);
+    expect(limited.SessionLapsTotal.value[0]).toBe(12);
+  });
+
+  it('reports metric units, not iRacing imperial', () => {
+    // LMU has no units setting and is metric-native; 0 gave every 'auto' widget
+    // mph. Per-widget overrides still win.
+    expect(mapLmuTelemetry(fixture()).DisplayUnits.value[0]).toBe(1);
+  });
+
+  it('raises the pit limiter bit so auto-limiter detection can fire', () => {
+    // usePitLimiterWarning tests EngineWarnings.PitSpeedLimiter (0x10) to tell
+    // an auto-limiter series from a manual one.
+    const off = mapLmuTelemetry(fixture());
+    expect(off.EngineWarnings.value[0]).toBe(0);
+
+    const on = mapLmuTelemetry({ ...fixture(), speedLimiterActive: true });
+    expect(on.EngineWarnings.value[0]).toBe(0x10);
   });
 
   it('maps LMU race flags', () => {

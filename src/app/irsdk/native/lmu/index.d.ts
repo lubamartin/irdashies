@@ -49,6 +49,12 @@ export interface LmuRawVehicle {
 export interface LmuRawTelemetry {
   running: boolean;
   gameVersion: number;
+  /**
+   * The sim's publish counters (SME_UPDATE_SCORING / SME_UPDATE_TELEMETRY).
+   * Unchanged counters mean this is a frame you have already processed.
+   */
+  scoringUpdate: number;
+  telemetryUpdate: number;
   trackName: string;
   playerName: string;
   serverName: string;
@@ -175,4 +181,11 @@ export class NativeLmu {
   isRunning(): boolean;
   read(): LmuRawTelemetry;
   readSession(): LmuRawSession;
+  /**
+   * The player's mElapsedTime straight off the mapped block — no copy, no
+   * object. Unchanged means the sim has not published since the last read, so
+   * read() can be skipped. -1 means nothing is mapped or there is no player
+   * car, which must be treated as "read anyway".
+   */
+  frameClock(): number;
 }

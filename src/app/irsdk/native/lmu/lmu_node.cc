@@ -7,6 +7,27 @@ namespace
 {
 const wchar_t *LMU_SHARED_MEMORY_FILE = L"LMU_Data";
 
+/**
+ * The player's telemetry clock, or -1 when there is no player car.
+ *
+ * mElapsedTime advances once per published physics frame -- measured at 100 Hz
+ * against LMU 14150 -- which makes it the signal for "is this frame new". It is
+ * eight bytes at a fixed offset, so it can be read straight off the mapped block
+ * without copying the 325 KB payload. A torn read can only produce a value that
+ * compares unequal, which errs towards copying; it cannot produce a false
+ * "unchanged".
+ */
+double LmuFrameClock(const LMUObjectOut &data)
+{
+  const auto &telem = data.telemetry;
+  if (!telem.playerHasVehicle)
+    return -1.0;
+  const uint8_t idx = telem.playerVehicleIdx;
+  if (idx >= LMU_MAX_VEHICLES)
+    return -1.0;
+  return telem.telemInfo[idx].mElapsedTime;
+}
+
 std::string ReadCString(const char *ptr, size_t maxLen)
 {
   size_t len = 0;
@@ -38,6 +59,7 @@ Napi::Object LmuSdkNode::Init(Napi::Env env, Napi::Object exports)
     InstanceMethod("isRunning", &LmuSdkNode::IsRunning),
     InstanceMethod("read", &LmuSdkNode::Read),
     InstanceMethod("readSession", &LmuSdkNode::ReadSession),
+    InstanceMethod("frameClock", &LmuSdkNode::FrameClock),
   });
 
   Napi::FunctionReference *constructor = new Napi::FunctionReference();
@@ -55,6 +77,9 @@ LmuSdkNode::LmuSdkNode(const Napi::CallbackInfo &info)
   , _mapped(NULL)
   , _snapshot{}
   , _hasSnapshot(false)
+  , _scoringUpdate(0)
+  , _telemetryUpdate(0)
+  , _frameClock(-1.0)
 {
 }
 
@@ -101,6 +126,9 @@ void LmuSdkNode::Unmap()
 {
   _mapped = NULL;
   _hasSnapshot = false;
+  _scoringUpdate = 0;
+  _telemetryUpdate = 0;
+  _frameClock = -1.0;
   if (_view != NULL)
   {
     UnmapViewOfFile(_view);
@@ -141,6 +169,13 @@ bool LmuSdkNode::CaptureSnapshot()
   if (_mapped == NULL)
     return false;
 
+  // The copy is unconditional. Eliding it when mElapsedTime had not advanced was
+  // tried and removed: it saves only the memcpy -- read() still builds the whole
+  // JS object either way -- and any signal that turns out not to advance freezes
+  // the held snapshot, which silently takes out every consumer of telemetry at
+  // once. Not a trade worth making for one memcpy. LmuFrameClock and frameClock()
+  // remain available for callers that want to reason about frame freshness
+  // without taking that risk.
   for (int attempt = 0; attempt < 4; ++attempt)
   {
     const LMUSnapshotState before = {
@@ -171,6 +206,11 @@ bool LmuSdkNode::CaptureSnapshot()
 
     _snapshot = candidate;
     _hasSnapshot = true;
+    _scoringUpdate = snapshot.scoringUpdate;
+    _telemetryUpdate = snapshot.telemetryUpdate;
+    // Taken from the copy, not from the live block, which may already have moved
+    // on -- otherwise the next poll would elide a frame it never captured.
+    _frameClock = LmuFrameClock(_snapshot);
     return true;
   }
 
@@ -358,19 +398,44 @@ void LmuSdkNode::FillVehicleArrays(Napi::Object &out) const
   out.Set("vehOriZ", oriZ);
 }
 
+/**
+ * The live frame clock, without copying or building anything.
+ *
+ * Lets a caller polling faster than the sim publishes decide whether to call
+ * read() at all: read() builds a JS object carrying roughly forty per-car
+ * arrays, and doing that for a frame already delivered is the dominant cost of
+ * a wasted poll. Returns -1 when nothing is mapped or there is no player car,
+ * which the caller must treat as "read anyway", not as "no new frame".
+ */
+Napi::Value LmuSdkNode::FrameClock(const Napi::CallbackInfo &info)
+{
+  auto env = info.Env();
+  if (_mapped == NULL)
+    return Napi::Number::New(env, -1.0);
+  return Napi::Number::New(env, LmuFrameClock(*_mapped));
+}
+
 Napi::Value LmuSdkNode::Read(const Napi::CallbackInfo &info)
 {
   auto env = info.Env();
   auto out = Napi::Object::New(env);
-  const bool captured = CaptureSnapshot();
-  out.Set("running", captured && IsLive());
+  // A failed copy is not a disconnect. CaptureSnapshot leaves the last good
+  // snapshot in place, so at worst this frame is one poll stale; IsLive still
+  // decides whether LMU is actually there, by checking its window. Reporting
+  // not-running here instead tore every widget down and reset every store.
+  CaptureSnapshot();
+  out.Set("running", IsLive());
 
-  if (!captured || !IsLive())
+  if (!IsLive())
     return out;
 
   const auto &scoring = _snapshot.scoring.scoringInfo;
 
   out.Set("gameVersion", _snapshot.generic.gameVersion);
+  // The sim's own publish counters. Consumers compare them to skip work on a
+  // frame they have already seen, rather than re-deriving that from the data.
+  out.Set("scoringUpdate", _snapshot.generic.events.SME_UPDATE_SCORING);
+  out.Set("telemetryUpdate", _snapshot.generic.events.SME_UPDATE_TELEMETRY);
   SetString(out, "trackName", scoring.mTrackName, sizeof(scoring.mTrackName));
   SetString(out, "playerName", scoring.mPlayerName, sizeof(scoring.mPlayerName));
   SetString(out, "serverName", scoring.mServerName, sizeof(scoring.mServerName));
