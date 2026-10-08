@@ -401,6 +401,11 @@ export const defaultDashboard: {
         },
         showOnlyWhenOnTrack: true,
         displayOrder: ['trace', 'bar', 'gear', 'steer'],
+        shiftFlash: {
+          enabled: false,
+          source: 'redline',
+          color: '#9333ea',
+        },
         sessionVisibility: {
           race: true,
           loneQualify: true,
@@ -726,6 +731,7 @@ export const defaultDashboard: {
         stylingOptions: {
           badge: false,
           statusBadges: false,
+          columnHeaders: { enabled: false },
           driverPosition: { background: true },
           driverNumber: { background: true, border: true },
           flagContour: {
@@ -1375,6 +1381,39 @@ export const defaultDashboard: {
       },
     },
     {
+      id: 'carsystems',
+      enabled: false,
+      layout: {
+        x: 6,
+        y: 620,
+        // Wide and short: the systems read left to right as columns, so the
+        // default slot is shaped for a strip rather than the tall table this
+        // widget used to be.
+        width: 380,
+        height: 70,
+      },
+      config: {
+        rows: [
+          'dcBrakeBias',
+          'dcABS',
+          'dcTractionControl',
+          'dcTractionControl2',
+          'dcThrottleShape',
+        ],
+        showUnsupportedRows: true,
+        showOffRows: true,
+        background: { opacity: 80 },
+        showOnlyWhenOnTrack: false,
+        sessionVisibility: {
+          race: true,
+          loneQualify: true,
+          openQualify: true,
+          practice: true,
+          offlineTesting: true,
+        },
+      },
+    },
+    {
       id: 'deltaspeed',
       enabled: false,
       layout: {
@@ -1544,6 +1583,20 @@ export const defaultDashboard: {
           lapWindow: 75,
           autoPin: true,
         },
+      },
+    },
+    {
+      id: 'tyrepanel',
+      enabled: false,
+      layout: { x: 1040, y: 350, width: 300, height: 180 },
+      config: {
+        background: { opacity: 80 },
+        showOnlyWhenOnTrack: true,
+        sessionVisibility: { race: true, loneQualify: true, openQualify: true, practice: true, offlineTesting: true },
+        pressureUnit: 'kPa',
+        temperatureUnit: 'C',
+        temperatureThresholds: { cold: 70, hot: 100 },
+        wearThresholds: { worn: 60, replace: 30 },
       },
     },
   ],
